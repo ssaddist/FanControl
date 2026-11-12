@@ -19,6 +19,7 @@ final class FanModel: ObservableObject {
     @Published var busy = false
     @Published var config: FanConfig { didSet { if config != oldValue { scheduleSave() } } }
     @Published var helperOutdated = false
+    @Published private(set) var isVisible = false
 
     private let queue = DispatchQueue(label: "fancontrol.smc")
     private var thermal: Thermal?
@@ -35,36 +36,66 @@ final class FanModel: ObservableObject {
 
     init() {
         config = FanConfig.load()
-        queue.async { [weak self] in
-            self?.thermal = try? Thermal(smc: SMC())
-            DispatchQueue.main.async { self?.refresh() }
-        }
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
+        schedule()
+        refresh()
+    }
+
+    func setVisible(_ visible: Bool) {
+        guard visible != isVisible else { return }
+        isVisible = visible
+        if visible { recent.removeAll(); seedHistory = true }
+        schedule()
+        refresh()
+    }
+
+    private var seedHistory = true
+
+    private func schedule() {
+        timer?.invalidate()
+        let interval: TimeInterval = isVisible ? 2 : 15
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in self?.refresh() }
+        t.tolerance = interval * 0.25
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     func refresh() {
+        let visible = isVisible
         queue.async { [weak self] in
-            guard let self, let thermal = self.thermal else { return }
-            let raw = thermal.cpuTemperature()
-            let fans = thermal.fans.map {
-                FanReading(id: $0.index, rpm: thermal.currentRPM($0), minRPM: $0.minRPM, maxRPM: $0.maxRPM)
+            guard let self else { return }
+            var raw: Double?
+            var fans: [FanReading]?
+            if visible {
+                if self.thermal == nil { self.thermal = try? Thermal(smc: SMC()) }
+                if let thermal = self.thermal {
+                    raw = thermal.cpuTemperature()
+                    fans = thermal.fans.map {
+                        FanReading(id: $0.index, rpm: thermal.currentRPM($0), minRPM: $0.minRPM, maxRPM: $0.maxRPM)
+                    }
+                }
             }
             let status = DaemonStatus.load()
             DispatchQueue.main.async { self.apply(raw: raw, fans: fans, status: status) }
         }
     }
 
-    private func apply(raw: Double?, fans: [FanReading], status: DaemonStatus?) {
+    private func apply(raw: Double?, fans: [FanReading]?, status: DaemonStatus?) {
+        let alive = status?.isAlive ?? false
+        if isVisible && seedHistory {
+            seedHistory = false
+            if alive, let h = status?.history, !h.isEmpty { history = h; recent = Array(h.suffix(5)) }
+        }
         if let raw {
             recent.append(raw)
             if recent.count > 5 { recent.removeFirst() }
             let t = recent.reduce(0, +) / Double(recent.count)
             temperature = t
             history.append(t)
-            if history.count > 90 { history.removeFirst() }
+            if history.count > 90 { history.removeFirst(history.count - 90) }
+        } else if alive, let t = status?.temperature {
+            temperature = t
         }
-        self.fans = fans
-        let alive = status.map { Date().timeIntervalSince($0.updated) < 10 } ?? false
+        if let fans { self.fans = fans }
         helperRunning = alive
         helperOutdated = alive && status?.build != buildID
         cooling = alive && (status?.cooling ?? false)

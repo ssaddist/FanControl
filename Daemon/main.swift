@@ -76,8 +76,27 @@ thermal.releaseAll()
 var cooling = false
 var coolingSince = Date.distantPast
 let minCoolingTime: TimeInterval = 60
-var recent: [Double] = []
+let smoothingWindow: TimeInterval = 10
+var samples: [(time: Date, value: Double)] = []
+var history: [Double] = []
 var lastMode: FanConfig.Mode? = nil
+var lastHistorySample = Date.distantPast
+var lastStatusWrite = Date.distantPast
+var lastStatusCooling: Bool? = nil
+var lastStatusError: String? = nil
+
+var cfg = opts.config
+var configStamp: Date? = nil
+func reloadConfigIfChanged() {
+    guard opts.daemon else { return }
+    let stamp = (try? FileManager.default.attributesOfItem(atPath: SharedPaths.config.path))?[.modificationDate] as? Date
+    if stamp != configStamp || configStamp == nil {
+        configStamp = stamp
+        cfg = FanConfig.load()
+    }
+}
+
+let queue = DispatchQueue(label: "fancontrold", qos: .utility)
 
 func shutdown() {
     if cooling { thermal.releaseAll(); log("Вентиляторы возвращены в автоматический режим") }
@@ -86,23 +105,42 @@ func shutdown() {
 var signalSources: [DispatchSourceSignal] = []
 for sig in [SIGINT, SIGTERM, SIGHUP] {
     signal(sig, SIG_IGN)
-    let src = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+    let src = DispatchSource.makeSignalSource(signal: sig, queue: queue)
     src.setEventHandler { shutdown() }
     src.resume()
     signalSources.append(src)
 }
 
-let timer = DispatchSource.makeTimerSource(queue: .main)
-timer.schedule(deadline: .now(), repeating: opts.interval)
+func nextInterval(_ t: Double) -> TimeInterval {
+    if cooling { return opts.interval }
+    switch cfg.mode {
+    case .max: return opts.interval
+    case .system: return 10
+    case .smart: return t < cfg.threshold - 10 ? 5 : opts.interval
+    }
+}
+
+let timer = DispatchSource.makeTimerSource(queue: queue)
 timer.setEventHandler {
-    let cfg = opts.daemon ? FanConfig.load() : opts.config
+    reloadConfigIfChanged()
     var lastError: String? = nil
+    let now = Date()
 
-    guard let raw = thermal.cpuTemperature() else { log("Не удалось прочитать температуру"); return }
+    guard let raw = thermal.cpuTemperature() else {
+        log("Не удалось прочитать температуру")
+        timer.schedule(deadline: .now() + opts.interval, leeway: .seconds(1))
+        return
+    }
 
-    recent.append(raw)
-    if recent.count > max(1, Int(10 / opts.interval)) { recent.removeFirst() }
-    let t = recent.reduce(0, +) / Double(recent.count)
+    samples.append((now, raw))
+    samples.removeAll { now.timeIntervalSince($0.time) > smoothingWindow }
+    let t = samples.map(\.value).reduce(0, +) / Double(samples.count)
+
+    if now.timeIntervalSince(lastHistorySample) >= 1.9 {
+        lastHistorySample = now
+        history.append((t * 10).rounded() / 10)
+        if history.count > 90 { history.removeFirst(history.count - 90) }
+    }
 
     if cfg.mode != lastMode { log("Режим: \(cfg.mode.rawValue)"); lastMode = cfg.mode }
 
@@ -113,27 +151,34 @@ timer.setEventHandler {
     case .smart:
         if !cooling && t > cfg.threshold { shouldCool = true }
         else if cooling && t < cfg.threshold - cfg.hysteresis
-                    && Date().timeIntervalSince(coolingSince) >= minCoolingTime { shouldCool = false }
+                    && now.timeIntervalSince(coolingSince) >= minCoolingTime { shouldCool = false }
         else { shouldCool = cooling }
     }
 
     if shouldCool != cooling {
         log(String(format: "CPU %.1f °C — %@", t, shouldCool ? "включаю вентиляторы" : "вентиляторы в авто-режиме"))
-        if !shouldCool { thermal.releaseAll() } else { coolingSince = Date() }
+        if !shouldCool { thermal.releaseAll() } else { coolingSince = now }
         cooling = shouldCool
     }
 
     if cooling {
-
         for f in thermal.fans {
             do { try thermal.setManual(f, rpm: cfg.mode == .max ? f.maxRPM : cfg.smartRPM) }
             catch { lastError = "Вентилятор \(f.index): \(error)"; log(lastError!) }
         }
     }
 
-    if opts.daemon {
-        DaemonStatus(cooling: cooling, temperature: t, updated: Date(), error: lastError, build: buildID).save()
+    if opts.daemon && (now.timeIntervalSince(lastStatusWrite) >= DaemonStatus.heartbeat
+                       || lastStatusCooling != cooling || lastStatusError != lastError) {
+        lastStatusWrite = now
+        lastStatusCooling = cooling
+        lastStatusError = lastError
+        DaemonStatus(cooling: cooling, temperature: t, updated: now, error: lastError,
+                     build: buildID, history: history).save()
     }
+
+    timer.schedule(deadline: .now() + nextInterval(t), leeway: .seconds(1))
 }
+timer.schedule(deadline: .now(), leeway: .seconds(1))
 timer.resume()
 dispatchMain()

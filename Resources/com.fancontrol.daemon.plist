@@ -10,6 +10,7 @@
     </array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
+    <key>LowPriorityIO</key><true/>
     <key>StandardOutPath</key><string>/var/log/fancontrold.log</string>
     <key>StandardErrorPath</key><string>/var/log/fancontrold.log</string>
 </dict>

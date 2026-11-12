@@ -46,6 +46,10 @@ struct DaemonStatus: Codable {
     var updated: Date
     var error: String?
     var build: String? = nil
+    var history: [Double]? = nil
+
+    static let heartbeat: TimeInterval = 10
+    var isAlive: Bool { Date().timeIntervalSince(updated) < Self.heartbeat * 3 }
 
     static func load() -> DaemonStatus? {
         guard let data = try? Data(contentsOf: SharedPaths.status) else { return nil }

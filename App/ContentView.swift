@@ -43,6 +43,9 @@ struct ContentView: View {
         .frame(width: 340)
         .background(background)
         .preferredColorScheme(.dark)
+        .background(WindowVisibilityReader { model.setVisible($0) })
+        .onAppear { model.setVisible(true) }
+        .onDisappear { model.setVisible(false) }
     }
 
     private var background: some View {
@@ -258,9 +261,10 @@ struct FanCard: View {
 
 struct SpinningFan: View {
     let rpm: Double
+    @EnvironmentObject var model: FanModel
 
     var body: some View {
-        TimelineView(.animation) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !model.isVisible)) { ctx in
             Image(systemName: "fanblades.fill")
                 .font(.system(size: 18))
                 .foregroundStyle(Theme.cool)
@@ -270,6 +274,38 @@ struct SpinningFan: View {
 
     private func rotation(at date: Date) -> Double {
         (date.timeIntervalSinceReferenceDate * rpm / 1000 * 360).truncatingRemainder(dividingBy: 360)
+    }
+}
+
+struct WindowVisibilityReader: NSViewRepresentable {
+    let onChange: (Bool) -> Void
+
+    func makeNSView(context: Context) -> NSView { Tracker(onChange: onChange) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class Tracker: NSView {
+        let onChange: (Bool) -> Void
+        private var observer: NSObjectProtocol?
+
+        init(onChange: @escaping (Bool) -> Void) {
+            self.onChange = onChange
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            guard let window else { onChange(false); return }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                guard let self, let window = self.window else { return }
+                self.onChange(window.occlusionState.contains(.visible))
+            }
+        }
+
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     }
 }
 
