@@ -46,6 +46,50 @@ codesign --force --sign - "$APP"
 
 echo "Готово: $APP"
 
+if [[ "${1:-}" == "--dmg" ]]; then
+  VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
+  DMG="build/FanControl-$VERSION.dmg"
+  echo "→ образ $DMG"
+  tmp=$(mktemp -d)
+  stage="$tmp/stage"
+  mkdir -p "$stage/.background"
+  cp -R "$APP" "$stage/"
+  ln -s /Applications "$stage/Applications"
+  swiftc -O Tools/MakeDMGBackground.swift -o "$tmp/makebg"
+  "$tmp/makebg" "$tmp"
+  tiffutil -cathidpicheck "$tmp/bg.png" "$tmp/bg@2x.png" -out "$stage/.background/bg.tiff" >/dev/null 2>&1
+  hdiutil detach /Volumes/FanControl -quiet 2>/dev/null || true
+  hdiutil create -quiet -srcfolder "$stage" -volname FanControl -fs HFS+ -format UDRW -ov "$tmp/rw.dmg"
+  hdiutil attach -quiet -readwrite -noverify -noautoopen "$tmp/rw.dmg"
+  osascript <<'EOF' || echo "  (не удалось оформить окно, образ будет без фона)"
+tell application "Finder"
+  tell disk "FanControl"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set bounds of container window to {200, 120, 800, 548}
+    set opts to icon view options of container window
+    set arrangement of opts to not arranged
+    set icon size of opts to 112
+    set text size of opts to 13
+    set background picture of opts to file ".background:bg.tiff"
+    set position of item "FanControl.app" of container window to {160, 200}
+    set position of item "Applications" of container window to {440, 200}
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+EOF
+  sync
+  hdiutil detach -quiet /Volumes/FanControl
+  rm -f "$DMG"
+  hdiutil convert -quiet "$tmp/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$DMG"
+  rm -rf "$tmp"
+  echo "Готово: $DMG"
+fi
+
 if [[ "${1:-}" == "--install" ]]; then
   pkill -x FanControl 2>/dev/null || true
   rm -rf /Applications/FanControl.app
