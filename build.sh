@@ -74,6 +74,7 @@ tell application "Finder"
     set icon size of opts to 112
     set text size of opts to 13
     set background picture of opts to file ".background:bg.tiff"
+    set extension hidden of item "FanControl.app" to true
     set position of item "FanControl.app" of container window to {160, 200}
     set position of item "Applications" of container window to {440, 200}
     update without registering applications

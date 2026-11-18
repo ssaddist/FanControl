@@ -16,6 +16,9 @@ func render(scale s: CGFloat, to path: String) {
     glow.draw(fromCenter: NSPoint(x: w / 2, y: h - 40), radius: 0,
               toCenter: NSPoint(x: w / 2, y: h - 40), radius: 320, options: [])
 
+    NSColor(red: 0.957, green: 0.953, blue: 0.937, alpha: 1).setFill()
+    NSBezierPath(roundedRect: NSRect(x: 50, y: 85, width: 500, height: 185), xRadius: 20, yRadius: 20).fill()
+
     let orange = NSColor(red: 1, green: 0.42, blue: 0.24, alpha: 1)
     let arrow = NSBezierPath()
     arrow.lineWidth = 3
