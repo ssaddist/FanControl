@@ -20,6 +20,13 @@ final class FanModel: ObservableObject {
     @Published var config: FanConfig { didSet { if config != oldValue { scheduleSave() } } }
     @Published var helperOutdated = false
     @Published private(set) var isVisible = false
+    @Published var style: AppStyle {
+        didSet {
+            guard style != oldValue else { return }
+            UserDefaults.standard.set(style.rawValue, forKey: "appStyle")
+            applyIcon()
+        }
+    }
 
     private let queue = DispatchQueue(label: "fancontrol.smc")
     private var thermal: Thermal?
@@ -36,6 +43,8 @@ final class FanModel: ObservableObject {
 
     init() {
         config = FanConfig.load()
+        style = AppStyle(rawValue: UserDefaults.standard.string(forKey: "appStyle") ?? "") ?? .classic
+        if style != .classic { DispatchQueue.main.async { self.applyIcon() } }
         schedule()
         refresh()
     }
@@ -57,6 +66,12 @@ final class FanModel: ObservableObject {
         t.tolerance = interval * 0.25
         RunLoop.main.add(t, forMode: .common)
         timer = t
+    }
+
+    private func applyIcon() {
+        let icon = style.icon
+        NSApp.applicationIconImage = icon
+        NSWorkspace.shared.setIcon(style == .classic ? nil : icon, forFile: Bundle.main.bundlePath, options: [])
     }
 
     func refresh() {

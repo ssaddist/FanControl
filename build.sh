@@ -4,22 +4,25 @@ cd "${0:A:h}"
 
 APP=build/FanControl.app
 ICNS=Resources/AppIcon.icns
+ICNS_EMBER=Resources/AppIcon-Ember.icns
 
 make_icon() {
-  echo "→ иконка"
+  local tool=$1 out=$2
+  echo "→ иконка $out"
   local tmp; tmp=$(mktemp -d)
-  swiftc -O Tools/MakeIcon.swift -o "$tmp/makeicon"
+  swiftc -O "$tool" -o "$tmp/makeicon"
   "$tmp/makeicon" "$tmp/icon.png"
   local set="$tmp/AppIcon.iconset"; mkdir "$set"
   for s in 16 32 128 256 512; do
     sips -z $s $s "$tmp/icon.png" --out "$set/icon_${s}x${s}.png" >/dev/null
     sips -z $((s*2)) $((s*2)) "$tmp/icon.png" --out "$set/icon_${s}x${s}@2x.png" >/dev/null
   done
-  iconutil -c icns "$set" -o "$ICNS"
+  iconutil -c icns "$set" -o "$out"
   rm -rf "$tmp"
 }
 
-[[ "${1:-}" == "--icon" || ! -f "$ICNS" ]] && make_icon
+[[ "${1:-}" == "--icon" || ! -f "$ICNS" ]] && make_icon Tools/MakeIcon.swift "$ICNS"
+[[ "${1:-}" == "--icon" || ! -f "$ICNS_EMBER" ]] && make_icon Tools/MakeIconEmber.swift "$ICNS_EMBER"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -37,7 +40,7 @@ swiftc -O -parse-as-library Shared/*.swift App/*.swift \
   -o "$APP/Contents/MacOS/FanControl"
 
 cp Resources/Info.plist "$APP/Contents/"
-cp Resources/com.fancontrol.daemon.plist "$ICNS" "$APP/Contents/Resources/"
+cp Resources/com.fancontrol.daemon.plist "$ICNS" "$ICNS_EMBER" "$APP/Contents/Resources/"
 codesign --force --sign - "$APP/Contents/Resources/fancontrold"
 codesign --force --sign - "$APP"
 
