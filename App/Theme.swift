@@ -2,16 +2,9 @@ import SwiftUI
 import AppKit
 
 enum AppStyle: String, CaseIterable, Identifiable {
-    case classic, ember
+    case ember, classic
 
     var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .classic: return "Классический"
-        case .ember: return "Чёрно-оранжевый"
-        }
-    }
 
     var iconResource: String {
         switch self {

@@ -4,6 +4,7 @@ struct ContentView: View {
     @EnvironmentObject var model: FanModel
 
     private var p: Palette { model.style.palette }
+    private var s: Strings { model.strings }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -25,6 +26,7 @@ struct ContentView: View {
         .frame(width: 340)
         .background(StyleBackground(style: model.style))
         .environment(\.palette, p)
+        .environment(\.strings, s)
         .animation(.easeInOut(duration: 0.25), value: model.style)
         .preferredColorScheme(.dark)
         .background(WindowVisibilityReader { model.setVisible($0) })
@@ -39,17 +41,27 @@ struct ContentView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text("FanControl").font(.system(size: 15, weight: .bold, design: p.style == .ember ? .default : .rounded))
-                Text("Охлаждение процессора").font(.system(size: 11)).foregroundStyle(p.text3)
+                Text(s.subtitle).font(.system(size: 11)).foregroundStyle(p.text3)
             }
             Spacer()
-            StyleSwitcher(style: $model.style)
+            Button { SettingsWindow.shared.show(model: model) } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(p.text2)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(p.card))
+                    .overlay(Circle().stroke(p.cardStroke))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help(s.settings)
         }
     }
 
     private var thresholdSlider: some View {
         VStack(spacing: 6) {
             HStack {
-                Text("Включать при").font(.system(size: 12)).foregroundStyle(p.text2)
+                Text(s.turnOnAt).font(.system(size: 12)).foregroundStyle(p.text2)
                 Spacer()
                 Text("\(Int(model.config.threshold)) °C")
                     .font(p.numberFont(13)).monospacedDigit()
@@ -57,9 +69,9 @@ struct ContentView: View {
             Slider(value: $model.config.threshold, in: 50...95, step: 1)
                 .tint(p.accentColor)
             HStack {
-                Text("Обороты").font(.system(size: 12)).foregroundStyle(p.text2)
+                Text(s.fanSpeed).font(.system(size: 12)).foregroundStyle(p.text2)
                 Spacer()
-                Text("\(Int(model.config.smartRPM)) об/мин")
+                Text("\(Int(model.config.smartRPM)) \(s.rpm)")
                     .font(p.numberFont(13)).monospacedDigit()
             }
             .padding(.top, 4)
@@ -77,15 +89,15 @@ struct ContentView: View {
     @ViewBuilder private var helperSection: some View {
         if !model.helperRunning {
             VStack(spacing: 8) {
-                Text("Чтобы управлять вентиляторами, нужен помощник с правами администратора. macOS один раз спросит пароль.")
+                Text(s.helperNeeded)
                     .font(.system(size: 11)).foregroundStyle(p.text2)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                PrimaryButton(title: model.busy ? "Установка…" : "Включить управление", busy: model.busy,
+                PrimaryButton(title: model.busy ? s.installing : s.enableControl, busy: model.busy,
                               action: model.installHelper)
             }
         }
         if model.helperOutdated {
-            PrimaryButton(title: model.busy ? "Обновление…" : "Помощник устарел — обновить", busy: model.busy,
+            PrimaryButton(title: model.busy ? s.updating : s.helperOutdated, busy: model.busy,
                           systemImage: "arrow.triangle.2.circlepath", action: model.installHelper)
         }
         if let err = model.helperError {
@@ -97,51 +109,15 @@ struct ContentView: View {
     private var footer: some View {
         HStack {
             if model.helperRunning {
-                Label("Помощник активен", systemImage: "checkmark.shield.fill")
-                Button("Удалить", action: model.uninstallHelper)
+                Label(s.helperActive, systemImage: "checkmark.shield.fill")
+                Button(s.remove, action: model.uninstallHelper)
                     .buttonStyle(.plain).underline()
-                    .help("Остановить и удалить фоновую службу")
+                    .help(s.removeHelp)
             }
             Spacer()
-            Button("Выйти") { NSApp.terminate(nil) }.buttonStyle(.plain)
+            Button(s.quit) { NSApp.terminate(nil) }.buttonStyle(.plain)
         }
         .font(.system(size: 11)).foregroundStyle(p.text3)
-    }
-}
-
-struct StyleSwitcher: View {
-    @Binding var style: AppStyle
-    @Environment(\.palette) private var p
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(AppStyle.allCases) { s in
-                Button { style = s } label: {
-                    swatch(s)
-                        .frame(width: 18, height: 18)
-                        .padding(3)
-                        .overlay(Circle().stroke(style == s ? p.text : p.text3.opacity(0.4), lineWidth: style == s ? 1.5 : 1))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .help(s.title)
-                .accessibilityLabel("Стиль: \(s.title)")
-            }
-        }
-    }
-
-    @ViewBuilder private func swatch(_ s: AppStyle) -> some View {
-        switch s {
-        case .classic:
-            Circle().fill(LinearGradient(colors: [Color(red: 0.36, green: 0.14, blue: 0.56), Color(red: 1.0, green: 0.36, blue: 0.62)],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-        case .ember:
-            ZStack {
-                Circle().fill(Color(hex: 0x0B0B0C))
-                Circle().stroke(Color(hex: 0x303036))
-                Circle().fill(Color(hex: 0xFF6B3D)).frame(width: 7, height: 7)
-            }
-        }
     }
 }
 
@@ -176,6 +152,7 @@ struct TemperatureGauge: View {
     let mode: FanConfig.Mode
     let rpm: Double
     @Environment(\.palette) private var p
+    @Environment(\.strings) private var s
 
     private let minT = 30.0, maxT = 105.0
     private let arc = 0.75
@@ -204,11 +181,11 @@ struct TemperatureGauge: View {
     }
 
     private var statusText: String {
-        if cooling { return mode == .max ? "Вентиляторы на максимуме" : "Охлаждение · \(Int(rpm)) об/мин" }
+        if cooling { return mode == .max ? s.fansAtMax : s.cooling(rpm) }
         switch mode {
-        case .smart: return "Порог \(Int(threshold)) °C"
-        case .max: return "Режим «Максимум»"
-        case .system: return "Управляет macOS"
+        case .smart: return s.threshold(threshold)
+        case .max: return s.maxMode
+        case .system: return s.macOSControls
         }
     }
 
@@ -233,7 +210,7 @@ struct TemperatureGauge: View {
                 .animation(.spring, value: threshold)
 
             VStack(spacing: 2) {
-                Text("ПРОЦЕССОР").font(p.label()).tracking(1.5)
+                Text(s.cpu.uppercased()).font(p.label()).tracking(1.5)
                     .foregroundStyle(p.text3)
                 Text(temperature.map { String(format: "%.0f°", $0) } ?? "—")
                     .font(p.numberFont(52)).monospacedDigit()
@@ -299,19 +276,20 @@ struct Sparkline: View {
 struct FanCard: View {
     let fan: FanReading
     @Environment(\.palette) private var p
+    @Environment(\.strings) private var s
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 SpinningFan(rpm: fan.rpm)
                 Spacer()
-                Text(p.style == .ember ? "ВЕНТ. \(fan.id + 1)" : "Вент. \(fan.id + 1)")
+                Text(s.fan(fan.id + 1, upper: p.style == .ember))
                     .font(p.style == .ember ? p.label() : .system(size: 10, weight: .medium))
                     .tracking(p.style == .ember ? 1 : 0)
                     .foregroundStyle(p.text3)
             }
             Text("\(Int(fan.rpm))").font(p.numberFont(20)).monospacedDigit()
-            + Text(" об/мин").font(.system(size: 10)).foregroundColor(p.text3)
+            + Text(" \(s.rpm)").font(.system(size: 10)).foregroundColor(p.text3)
             GeometryReader { g in
                 ZStack(alignment: .leading) {
                     Capsule().fill(p.track)
@@ -383,12 +361,13 @@ struct ModePicker: View {
     @Binding var mode: FanConfig.Mode
     @Namespace private var ns
     @Environment(\.palette) private var p
+    @Environment(\.strings) private var s
 
-    private let items: [(FanConfig.Mode, String, String)] = [
-        (.system, "Система", "apple.logo"),
-        (.smart, "Авто", "thermometer.medium"),
-        (.max, "Максимум", "wind"),
-    ]
+    private var items: [(FanConfig.Mode, String, String)] {
+        [(.system, s.modeSystem, "apple.logo"),
+         (.smart, s.modeAuto, "thermometer.medium"),
+         (.max, s.modeMax, "wind")]
+    }
 
     var body: some View {
         let outer = RoundedRectangle(cornerRadius: p.controlRadius, style: .continuous)

@@ -27,6 +27,10 @@ final class FanModel: ObservableObject {
             applyIcon()
         }
     }
+    @Published var language: AppLanguage {
+        didSet { UserDefaults.standard.set(language.rawValue, forKey: "appLanguage") }
+    }
+    var strings: Strings { language.strings }
 
     private let queue = DispatchQueue(label: "fancontrol.smc")
     private var thermal: Thermal?
@@ -43,7 +47,8 @@ final class FanModel: ObservableObject {
 
     init() {
         config = FanConfig.load()
-        style = AppStyle(rawValue: UserDefaults.standard.string(forKey: "appStyle") ?? "") ?? .classic
+        style = AppStyle(rawValue: UserDefaults.standard.string(forKey: "appStyle") ?? "") ?? .ember
+        language = AppLanguage(rawValue: UserDefaults.standard.string(forKey: "appLanguage") ?? "") ?? .en
         if style != .classic { DispatchQueue.main.async { self.applyIcon() } }
         schedule()
         refresh()
@@ -120,7 +125,7 @@ final class FanModel: ObservableObject {
     func installHelper() {
         guard let bin = Bundle.main.path(forResource: "fancontrold", ofType: nil),
               let plist = Bundle.main.path(forResource: SharedPaths.daemonLabel, ofType: "plist") else {
-            helperError = "В пакете приложения нет файлов помощника"; return
+            helperError = strings.noHelperFiles; return
         }
         config.save()
         runPrivileged("""
@@ -150,7 +155,7 @@ final class FanModel: ObservableObject {
             DispatchQueue.main.async {
                 self.busy = false
                 if let err, (err[NSAppleScript.errorNumber] as? Int) != -128 {
-                    self.helperError = err[NSAppleScript.errorMessage] as? String ?? "Не удалось выполнить"
+                    self.helperError = err[NSAppleScript.errorMessage] as? String ?? self.strings.actionFailed
                 } else {
                     self.helperError = nil
                 }
