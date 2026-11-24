@@ -68,21 +68,25 @@ tell application "Finder"
     set current view of container window to icon view
     set toolbar visible of container window to false
     set statusbar visible of container window to false
-    set bounds of container window to {200, 120, 800, 548}
+    set pathbar visible of container window to false
+    set sidebar width of container window to 0
+    set bounds of container window to {200, 120, 800, 505}
     set opts to icon view options of container window
     set arrangement of opts to not arranged
     set icon size of opts to 112
     set text size of opts to 13
     set background picture of opts to file ".background:bg.tiff"
     set extension hidden of item "FanControl.app" to true
-    set position of item "FanControl.app" of container window to {160, 200}
-    set position of item "Applications" of container window to {440, 200}
+    set position of item "FanControl.app" of container window to {160, 170}
+    set position of item "Applications" of container window to {440, 170}
     update without registering applications
     delay 1
     close
   end tell
 end tell
 EOF
+  cp "$ICNS_EMBER" /Volumes/FanControl/.VolumeIcon.icns
+  SetFile -a C /Volumes/FanControl
   sync
   hdiutil detach -quiet /Volumes/FanControl
   rm -f "$DMG"

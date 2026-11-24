@@ -49,7 +49,7 @@ final class FanModel: ObservableObject {
         config = FanConfig.load()
         style = AppStyle(rawValue: UserDefaults.standard.string(forKey: "appStyle") ?? "") ?? .ember
         language = AppLanguage(rawValue: UserDefaults.standard.string(forKey: "appLanguage") ?? "") ?? .en
-        if style != .classic { DispatchQueue.main.async { self.applyIcon() } }
+        if style != .ember { DispatchQueue.main.async { self.applyIcon() } }
         schedule()
         refresh()
     }
@@ -76,7 +76,7 @@ final class FanModel: ObservableObject {
     private func applyIcon() {
         let icon = style.icon
         NSApp.applicationIconImage = icon
-        NSWorkspace.shared.setIcon(style == .classic ? nil : icon, forFile: Bundle.main.bundlePath, options: [])
+        NSWorkspace.shared.setIcon(style == .ember ? nil : icon, forFile: Bundle.main.bundlePath, options: [])
     }
 
     func refresh() {
